@@ -1,6 +1,36 @@
-currentZone = nil
+local currentZone = nil
 local spawnedEntities = 0
-entities = {}
+local entities = {}
+local threadCounter = 0
+local killThread = true
+local inZone = false
+if not Config.AimBlock.enable then return end
+function aimBlock(global)
+    CreateThread(function()
+        while cache.weapon and (global and true or currentZone) do
+            local aiming, entity = GetEntityPlayerIsFreeAimingAt(cache.playerId)
+            local freeAiming = IsPlayerFreeAiming(cache.playerId)
+            local type = GetEntityType(entity)
+
+            if not freeAiming or IsPedAPlayer(entity) or type == 2 or (type == 1 and IsPedInAnyVehicle(entity, false)) then
+                DisableControlAction(0, 24, true)
+                DisableControlAction(0, 47, true)
+                DisableControlAction(0, 58, true)
+                DisablePlayerFiring(cache.ped, true)
+            end
+            Wait(1)
+        end
+    end)
+end
+
+local function deleteAllEntities()
+    for k, v in pairs(entities) do
+        if DoesEntityExist(v.entity) then
+            DeleteEntity(v.entity)
+            entities = {}
+        end
+    end
+end
 
 local function disableWeapon()
     while not cache.weapon do Wait(1) end
@@ -82,7 +112,7 @@ local function getEntity(_entity)
     return false
 end
 
-function removeEntity(_entity)
+local function removeEntity(_entity)
     for _, entity in pairs(entities) do
         if entity then
             if entity.entity == _entity then
@@ -95,23 +125,38 @@ function removeEntity(_entity)
 
     DeleteEntity(_entity)
     spawnedEntities -= 1
-
+    if spawnedEntities < 0 then
+        spawnedEntities = 0
+    end
     utils.debug(entities)
 end
 
+local ActualSpawns = 0
 local function spawnEntities()
+    threadCounter = threadCounter + 1
     utils.debug("Spawning entities")
-
-    while currentZone do
+    utils.debug("Threadkill: " .. tostring(killThread) )
+    utils.debug("Threads: " .. threadCounter)
+    utils.debug(json.encode(currentZone))
+    while currentZone and not killThread and threadCounter <= 1 and inZone do
+        utils.debug("Spawning entities loop")
+        utils.debug("Threads: " .. threadCounter)
+        utils.debug("Spawned: " .. spawnedEntities)
+        utils.debug("ActualSpawns: " .. ActualSpawns)
+        utils.debug("Limit: " .. currentZone.maxSpawns)
+        if killThread then
+            utils.debug("Killing Thread")
+            return
+        end
         if spawnedEntities < currentZone.maxSpawns then
-            local spawnChance = math.random(1, 100)
+            --local spawnChance = math.random(1, 100)
 
             local animal = currentZone.animals[math.random(1, #currentZone.animals)]
 
-            if animal.chance >= spawnChance then
+            if not killThread then --animal.chance >= spawnChance and 
                 local coords = utils.getSpawnPoint(currentZone.coords, currentZone.radius)
                 local entity = utils.createPed(animal.model, coords, 0.0, true, true)
-
+                ActualSpawns = ActualSpawns + 1
 
                 SetRelationshipBetweenGroups(5, `WILD_ANIMAL`, `PLAYER`)
                 SetRelationshipBetweenGroups(5, `PLAYER`, `WILD_ANIMAL`)
@@ -123,12 +168,12 @@ local function spawnEntities()
                 local blip = animal.blip.enable and utils.createEntityBlip(animal.blip) or nil
                 local marker = animal.marker
 
-                spawnedEntities += 1
+                spawnedEntities =  spawnedEntities + 1
                 utils.debug("entity spawned: ", entity, "Coords: ", coords)
 
                 entities[#entities + 1] = { entity = entity, blip = blip }
 
-                CreateThread(function()
+                --CreateThread(function()
                     while not IsEntityDead(entity) do
                         local sleep = 1500
                         local entityCoords = GetEntityCoords(entity)
@@ -144,7 +189,10 @@ local function spawnEntities()
                                     false)
                             end
                         end
-
+                        if killThread then
+                            utils.debug("Killing Thread")
+                            return
+                        end
                         Wait(sleep)
                     end
 
@@ -183,34 +231,59 @@ local function spawnEntities()
                             })
                         elseif Config.Target == "qb-target" then
                             local entityCoords = GetEntityCoords(entity)
-                            print(entityCoords)
-                            exports['qb-target']:AddTargetEntity(entity, {
-                                options = {
-                                    {
-                                        num = 1,
-                                        type = "client",
-                                        icon = 'fas fa-knife',
-                                        label = locale('interact_haverest_animal'),
-                                        action = function()
-                                            harvestAnimal(animal, entityCoords, entity)
-                                        end,
-                                    }
-                                },
-                                distance = 2.5,
-                            })
+                            local killer = GetPedSourceOfDeath(entity)
+                            if killer == GetPlayerPed(-1) then 
+                                utils.debug(entityCoords)
+                                exports['qb-target']:AddTargetEntity(entity, {
+                                    options = {
+                                        {
+                                            num = 1,
+                                            type = "client",
+                                            icon = 'fas fa-knife',
+                                            label = locale('interact_haverest_animal'),
+                                            action = function()
+                                                harvestAnimal(animal, entityCoords, entity)
+                                            end,
+                                        }
+                                    },
+                                    distance = 2.5,
+                                })
+                            while DoesEntityExist(entity) do
+                                Citizen.Wait(500)
+                            end
+                            else
+                                Citizen.Wait(3000)
+                                removeEntity(entity)
+                            end
                         end
                     end
-                end)
+                --end)
             end
         end
-        Wait(Config.SpawnDelay * 1000)
+
+        --Citizen.Wait(500)
+        
+
     end
+
+    utils.debug("SpawnThreadKiller")
+    inZone = false
+    killThread = true
+    threadCounter = 0
+    utils.debug(killThread)
+    utils.debug(threadCounter)
+    SetForcePedFootstepsTracks(false)
+    currentZone = nil
+    deleteAllEntities()
+    spawnedEntities = 0
+    inZone = false
+    entities = {}
+    return
 end
 
 
 function harvestAnimal(animal, entityCoords, entity)
     local canHarvest = true
-
     if animal.harvestWeapons then
         utils.debug("Checking valid harvesting weapon")
         if not utils.validWeapon(animal.harvestWeapons, cache.weapon) then
@@ -239,13 +312,17 @@ function harvestAnimal(animal, entityCoords, entity)
             },
         })
         stopCam(cam)
-        removeEntity(entity)
-
+        
+        ActualSpawns = 0
         local data  = {}
         data.coords = entityCoords
         data.items  = animal.items
 
         TriggerServerEvent("ars_hunting:harvestAnimal", data)
+        removeEntity(entity)
+        spawnedEntities = 0
+        deleteAllEntities()
+        --spawnedEntities = 0
     else
         utils.showNotification(locale("invalid_harvesting_weapon"))
     end
@@ -275,36 +352,56 @@ CreateThread(function()
     end
 end)
 
-for zoneName, zoneData in pairs(Config.HuntingZones) do
-    local zone = lib.zones.sphere({
-        name = zoneName,
-        coords = zoneData.coords,
-        radius = zoneData.radius,
-        debug = Config.Debug
-    })
 
-    if zoneData.zone_radius.enable then
-        utils.createZoneBlip({ coords = zoneData.coords, radius = zoneData.radius, color = zoneData.zone_radius.color, alpha = zoneData.zone_radius.opacity })
-        utils.debug("Zone Blip Created")
-    end
-    if zoneData.blip.enable then
-        zoneData.blip.pos = zoneData.coords
-        utils.createBlip(zoneData.blip)
-        utils.debug("Blip Created")
-    end
 
-    function zone:onEnter()
-        currentZone = zoneData
-        SetForcePedFootstepsTracks(true)
 
-        CreateThread(spawnEntities)
-    end
+    for zoneName, zoneData in pairs(Config.HuntingZones) do
+        local zone = lib.zones.sphere({
+            name = zoneName,
+            coords = zoneData.coords,
+            radius = zoneData.radius,
+            debug = Config.Debug
+        })
 
-    function zone:onExit()
-        SetForcePedFootstepsTracks(false)
-        currentZone = nil
+
+        if zoneData.zone_radius.enable then
+            utils.createZoneBlip({ coords = zoneData.coords, radius = zoneData.radius, color = zoneData.zone_radius.color, alpha = zoneData.zone_radius.opacity })
+            utils.debug("Zone Blip Created")
+        end
+        if zoneData.blip.enable then
+            zoneData.blip.pos = zoneData.coords
+            utils.createBlip(zoneData.blip)
+            utils.debug("Blip Created")
+        end
+        
+        function zone:inside()
+            inZone = true
+        end
+
+        function zone:onEnter()
+            utils.debug("In The Zone - Attempting to kill orphan Threads")
+            killThread = true
+            Wait(Config.SpawnDelay * 1000)
+            utils.debug("Spawn Delay Over")
+            currentZone = zoneData
+            SetForcePedFootstepsTracks(true)
+            killThread = false
+            CreateThread(spawnEntities)
+        end
+    
+        function zone:onExit()
+            utils.debug("Left Hunting Zone")
+            inZone = false
+            killThread = true
+            threadCounter = 0
+            utils.debug(killThread)
+            utils.debug(threadCounter)
+            SetForcePedFootstepsTracks(false)
+            currentZone = nil
+            deleteAllEntities()
+            spawnedEntities = 0
+        end
     end
-end
 
 
 local canTrack = true
@@ -466,17 +563,13 @@ RegisterNetEvent("ars_hunting:placeBait", placeBait)
 
 
 
-function deleteAllEntities()
-    for k, v in pairs(entities) do
-        if DoesEntityExist(v.entity) then
-            DeleteEntity(v.entity)
-        end
-    end
-end
+
 
 AddEventHandler("onResourceStop", function(resource)
     if resource ~= GetCurrentResourceName() then return end
     deleteAllEntities()
-    stopMission()
+    exports["ars_hunting"]:stopMission()
     lib.hideTextUI()
+    threadCounter = 0
 end)
+

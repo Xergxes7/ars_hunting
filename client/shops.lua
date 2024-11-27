@@ -22,7 +22,7 @@ local function openShop(items, shopName)
     if items.buy and items.buy[1] then
         options[#options + 1] = {
             title = locale("shop_buy_item"),
-            icon = Config.ImagesPath .. "sell.png",
+            icon = Config.ImagesPath .. "buy.png",
             onSelect = function()
                 local _items = {}
 
@@ -52,7 +52,7 @@ local function openShop(items, shopName)
     if items.sell and items.sell[1] then
         options[#options + 1] = {
             title = locale("shop_sell_item"),
-            icon = Config.ImagesPath .. "buy.png",
+            icon = Config.ImagesPath .. "sell.png",
             onSelect = function()
                 local _items = {}
 

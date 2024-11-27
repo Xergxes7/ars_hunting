@@ -1,6 +1,8 @@
 local currentMission = nil
 local animalBrought = false
 local _vehicle = nil
+local QBCore = exports['qb-core']:GetCoreObject()
+local entities = {}
 
 if Config.HuntMaster.blip.enable then
     Config.HuntMaster.blip.pos = Config.HuntMaster.coords.xyz
@@ -8,8 +10,31 @@ if Config.HuntMaster.blip.enable then
     utils.debug("Mission Blip Created")
 end
 
+local function deleteAllEntities()
+    for k, v in pairs(entities) do
+        if DoesEntityExist(v.entity) then
+            DeleteEntity(v.entity)
+            entities = {}
+        end
+    end
+end
 
-function stopMission()
+local function removeEntity(_entity)
+    for _, entity in pairs(entities) do
+        if entity then
+            if entity.entity == _entity then
+                utils.removeBlip(entity?.blip)
+                entities[_] = nil
+                break
+            end
+        end
+    end
+
+    DeleteEntity(_entity)
+    utils.debug(entities)
+end
+
+local function stopMission()
     if currentMission then
         lib.hideTextUI()
         currentMission = nil
@@ -18,6 +43,7 @@ function stopMission()
         DeleteEntity(_vehicle)
     end
 end
+exports("stopMission",stopMission)
 
 local function dragAnimal(entity, attach, vehicle, vehicleAttach)
     animalBrought = false
@@ -96,7 +122,34 @@ local function dragAnimal(entity, attach, vehicle, vehicleAttach)
     ClearPedTasksImmediately(playerPed)
     utils.showNotification(locale("take_animal_to_huntmaster"))
     SetNewWaypoint(Config.HuntMaster.vehicleDeposit.x, Config.HuntMaster.vehicleDeposit.y)
-
+    if not currentMission.legal then
+        local messageT = "Report of Poaching"
+        local codeNameT = "hunting"
+        local tenCodeT = "10-17"
+        local descriptionT = "Poaching Reported in Area"
+        local positionT = GetEntityCoords(PlayerPedId())
+        local genderT = QBCore.Functions.GetPlayerData().charinfo.gender
+        local sprite = 84
+    
+        exports["ps-dispatch"]:CustomAlert({
+            coords = positionT,
+            message = messageT,
+            dispatchCode = codeNameT,
+            code = tenCodeT,
+            description = descriptionT,
+            radius = 200,
+            gender = genderT,
+            sprite = sprite,
+            priority = 1,
+            scale = 1.5,
+            length = 3,
+            sound = 'Lose_1st',
+            sound2 = 'GTAO_FM_Events_Soundset',
+            job = 'police',
+            carCheck = true,
+            jobs = {'leo'}
+        })
+    end
     while DoesEntityExist(entity) do
         local sleep = 1500
 
@@ -107,8 +160,19 @@ local function dragAnimal(entity, attach, vehicle, vehicleAttach)
             sleep = 1
             DrawMarker(1, Config.HuntMaster.vehicleDeposit.x, Config.HuntMaster.vehicleDeposit.y, Config.HuntMaster.vehicleDeposit.z - 1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.2, 3.0, 1.0, 10, 255, 10, 155, false, true, 2, false, nil, nil, false)
 
+
             if dist <= 5 then
+
                 if cache.vehicle == vehicle then
+                    lib.showTextUI('Flex [E] to return vehicle and animal.', {
+                        position = "top-center",
+                        icon = 'car',
+                        style = {
+                            borderRadius = 0,
+                            backgroundColor = '#ffaa00',
+                            color = 'white'
+                        }
+                    })
                     if IsControlJustPressed(0, 38) then
                         TaskLeaveVehicle(cache.ped, vehicle, 64)
 
@@ -129,6 +193,8 @@ local function dragAnimal(entity, attach, vehicle, vehicleAttach)
 end
 
 
+
+
 local function openMissions()
     local missions = {}
 
@@ -143,7 +209,10 @@ local function openMissions()
                 onSelect = function()
                     local canDoMission = lib.callback.await('ars_hunting:canDoMission', false, mission.id, mission.delay)
                     if canDoMission ~= true then return utils.showNotification((locale("wait_do_another_mission")):format(canDoMission)) end
-
+                    if not mission.legal and exports["wasabi_police"]:getPoliceOnline() < Config.RequiredPolice then
+                        utils.showNotification((locale("not_enough_cops")))
+                        return
+                    end
                     local alert = lib.alertDialog({
                         header = mission.label,
                         content = mission.content,
@@ -175,6 +244,8 @@ local function openMissions()
                     if vehicleData.enable then
                         _vehicle = utils.createVehicle(vehicleData.model, Config.HuntMaster.vehicleSpawn, true, false)
                         TaskWarpPedIntoVehicle(cache.ped, _vehicle, -1)
+                        local plate = GetVehicleNumberPlateText(_vehicle)
+                        TriggerServerEvent('qb-vehiclekeys:server:AcquireVehicleKeys', plate)
                     end
 
                     local requiredItemsText = nil
@@ -186,7 +257,7 @@ local function openMissions()
                         end
                     elseif mission.type == "animal" then
                         local coords = mission.spawns[math.random(1, #mission.spawns)]
-                        local entity = utils.createPed(mission.animal, coords)
+                        local entity = utils.createPed(mission.animal, coords,0.0, true, true)
 
                         SetRelationshipBetweenGroups(5, `WILD_ANIMAL`, `PLAYER`)
                         SetRelationshipBetweenGroups(5, `PLAYER`, `WILD_ANIMAL`)

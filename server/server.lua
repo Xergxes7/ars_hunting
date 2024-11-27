@@ -1,17 +1,19 @@
+local QBCore = exports['qb-core']:GetCoreObject()
+
 function getRarity(items)
     local chance = math.random(1, 100)
     local eligibleItems = {}
 
     for _, item in pairs(items) do
         if item.chance >= chance then
-            print(item.item, item.chance, chance)
+            --print(item.item, item.chance, chance)
             table.insert(eligibleItems, item)
         end
     end
 
     if #eligibleItems > 0 then
         local selectedIdx = math.random(1, #eligibleItems)
-        print(selectedIdx)
+        --print(selectedIdx)
         return eligibleItems[selectedIdx]
     else
         return getRarity(items)
@@ -74,13 +76,28 @@ RegisterNetEvent("ars_hunting:sellBuyItem", function(data)
 end)
 
 RegisterNetEvent("ars_hunting:finishMission", function(data)
-    local source = source
-    local playerPed = GetPlayerPed(source)
+    local src = source
+    local xPlayer = QBCore.Functions.GetPlayer(src) 
+    local playerPed = GetPlayerPed(src)
     local playerCoords = GetEntityCoords(playerPed)
     local dist = #(playerCoords - Config.HuntMaster.coords.xyz)
-    if dist > 3.0 then return print("ARS HUNTING >> PLAYER MIGHT BE CHEATING ID: " .. source) end
-
-    framework.addItems({ target = source, items = data.rewards })
+    if dist > 3.0 then return print("ARS HUNTING >> PLAYER MIGHT BE CHEATING ID: " .. src) end
+    
+    for _, v in pairs(data.rewards) do
+        if v.item == "money" then
+            framework.addMoney({ target = source, amount = v.quantity })
+        elseif v.item == "dirtymoney" then
+            local info = {worth = v.quantity}
+            xPlayer.Functions.AddItem('markedbills', 1, false, info)
+            local itemData = QBCore.Shared.Items['markedbills']
+            TriggerClientEvent('ps-inventory:client:ItemBox', src, itemData, "add",1 )
+        else
+            local itemData = QBCore.Shared.Items[v.item]
+            framework.addItems({ target = source, items = v.item })
+            TriggerClientEvent('ps-inventory:client:ItemBox', src, itemData, "add",1 )
+        end
+    end
+    
 
     if data.requirements then
         for _, item in pairs(data.requirements) do

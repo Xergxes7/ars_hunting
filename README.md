@@ -10,6 +10,8 @@ Get ready for the hunt with Ars Advanced Hunting! Explore the wild, track animal
 
 :dart: **Dependencies**
 -   ox_lib
+-   ps-dispatch
+-   ps-inventory
 
 :loudspeaker: **Features:**
 
@@ -21,7 +23,6 @@ Get ready for the hunt with Ars Advanced Hunting! Explore the wild, track animal
 -   Animal Tracking System.
 -   Target Support
 -   Bait System.
--   Campfire to cook food.
 -   Integrated shops.
 -   Missions
 -   Saved Missions Delays
